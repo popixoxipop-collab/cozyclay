@@ -149,6 +149,29 @@ try {
 	const scene = await call("describe_scene");
 	assert(scene.includes("LIVE TEST") && scene.includes("Chair") && scene.includes("x 3.25"), "describe_scene did not render the live description");
 
+	// frame_shot has to aim the lens, not just place it. Every view except `front`
+	// orbits the camera off the subject's facing axis, so a position-only command
+	// leaves a live editor pointing wherever it already was: the subject drops out
+	// of frame — behind the lens for profile/rear/back — while the slate still
+	// reports it filling the frame. Runs last because it moves the camera the
+	// assertions above pin to x 3.25.
+	for (const view of ["front", "front three-quarter", "profile", "rear three-quarter", "back"]) {
+		commands.length = 0;
+		await call("frame_shot", { size: "medium shot", view, level: "eye", side: "right", focal_mm: 35 });
+		const camera = commands.find(({ name }) => name === "set_camera");
+		assert(camera, `frame_shot (${view}) did not forward set_camera`);
+		const { lookAtX, lookAtY, lookAtZ } = camera.args;
+		assert(
+			[lookAtX, lookAtY, lookAtZ].every(Number.isFinite),
+			`frame_shot (${view}) placed the camera without an aim target`,
+		);
+		assert(lookAtY === 1.3, `frame_shot (${view}) aimed at y=${lookAtY}, not the framing pivot`);
+		// A camera sitting on its own aim target has no facing to derive.
+		const reach = Math.hypot(camera.args.x - lookAtX, camera.args.z - lookAtZ);
+		assert(reach > 0.01, `frame_shot (${view}) put the camera on top of its own aim target`);
+	}
+	commands.length = 0;
+
 	const closed = once(socket, "close");
 	socket.close();
 	await closed;

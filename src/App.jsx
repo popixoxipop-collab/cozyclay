@@ -3272,10 +3272,25 @@ globalThis.playMode = centerTab === "play";
 					if (nextFov < 14 || nextFov > 90) throw new Error("focalMm is outside the editor lens range");
 				}
 				const next = { ...live.camera, ...patch };
+				// Optional aim target (live-protocol v1, additive). frame_shot sends it because
+				// a placed-but-unaimed camera keeps its previous orientation, which silently
+				// orbits the subject out of frame for every view except `front`. Writing
+				// look.current too — the render pass restores rotation from it each frame, so a
+				// bare camera.lookAt would be overwritten immediately.
+				const aim = finitePatch(args, ["lookAtX", "lookAtY", "lookAtZ"]);
+				const hasAim =
+					aim.lookAtX !== undefined && aim.lookAtY !== undefined && aim.lookAtZ !== undefined;
 				const camera = shotCamRef.current;
 				if (camera) {
 					camera.position.set(next.x, next.y, next.z);
 					camera.fov = nextFov;
+					if (hasAim) {
+						const angles = aimAt(camera.position, { x: aim.lookAtX, y: aim.lookAtY, z: aim.lookAtZ });
+						look.current.yaw = angles.yaw;
+						look.current.pitch = angles.pitch;
+						camera.rotation.order = "YXZ";
+						camera.rotation.set(angles.pitch, angles.yaw, 0);
+					}
 					camera.updateProjectionMatrix();
 				}
 				live.camera = next;
